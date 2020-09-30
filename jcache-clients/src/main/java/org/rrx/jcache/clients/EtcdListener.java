@@ -2,7 +2,7 @@ package org.rrx.jcache.clients;
 
 import com.alibaba.fastjson.JSON;
 import io.etcd.jetcd.watch.WatchEvent;
-import org.rrx.jcache.clients.cache.HotsCache;
+import org.rrx.jcache.clients.cache.LocalCache;
 import org.rrx.jcache.commons.config.properties.JcacheClientConfigProperties;
 import org.rrx.jcache.commons.constants.CommonConstants;
 import org.rrx.jcache.commons.dto.CacheBean;
@@ -26,12 +26,12 @@ public class EtcdListener {
 
     private SetcdClients setcdClients;
 
-    private HotsCache hotsCache;
+    private LocalCache localCache;
 
-    public EtcdListener(JcacheClientConfigProperties configProperties, SetcdClients setcdClients, HotsCache hotsCache) {
+    public EtcdListener(JcacheClientConfigProperties configProperties, SetcdClients setcdClients, LocalCache localCache) {
         this.configProperties = configProperties;
         this.setcdClients = setcdClients;
-        this.hotsCache = hotsCache;
+        this.localCache = localCache;
     }
 
     public void startHotKeyListener() {
@@ -49,10 +49,10 @@ public class EtcdListener {
                             return;
                         }
                         CacheBean cacheBean = JSON.parseObject(eventBean.getValue(), CacheBean.class);
-                        hotsCache.put(redisKey, cacheBean);
+                        localCache.put(redisKey, cacheBean);
                     } else {
                         //任一客户端，发生set expire del 事件, 则同步失效本地的缓存
-                        hotsCache.remove(redisKey);
+                        localCache.remove(redisKey);
                     }
 
                 } catch (Exception e) {

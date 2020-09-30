@@ -2,7 +2,9 @@ package org.rrx.jcache.clients;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.serializer.SerializerFeature;
-import org.rrx.jcache.clients.cache.HotsCache;
+import org.rrx.jcache.clients.cache.LocalCache;
+import org.rrx.jcache.clients.cache.LocalCacheFactory;
+import org.rrx.jcache.clients.cache.LocalNode;
 import org.rrx.jcache.clients.config.spring.annotation.Disposable;
 import org.rrx.jcache.commons.config.properties.ClientBaseProperties;
 import org.rrx.jcache.commons.config.properties.JcacheClientConfigProperties;
@@ -40,7 +42,7 @@ public class JcacheClients implements Disposable {
 
     private ClientBaseProperties baseProperties;
 
-    private HotsCache hotsCache;
+    private LocalCache localCache;
 
     private static JcacheClients instance;
 
@@ -61,7 +63,7 @@ public class JcacheClients implements Disposable {
             synchronized (JcacheClients.class) {
                 if (instance == null) {
                     //初始化本地缓存池
-                    this.hotsCache = new HotsCache();
+                    this.localCache = LocalCacheFactory.getLoaclCache();
                     //初始化mq生产者
                     this.rocketProducer = new RocketProducer(configProperties.getRocketmqProperties());
                     this.rocketProducer.initProducer();
@@ -76,7 +78,7 @@ public class JcacheClients implements Disposable {
                     //预热缓存
                     loadCache();
                     //初始化etcd监听器
-                    EtcdListener etcdListener = new EtcdListener(configProperties, setcdClients, hotsCache);
+                    EtcdListener etcdListener = new EtcdListener(configProperties, setcdClients, localCache);
                     etcdListener.startHotKeyListener();
                     instance = this;
                     log.info("JcacheClients start success");
@@ -96,7 +98,7 @@ public class JcacheClients implements Disposable {
     public String get(String key) {
 
         //先查询本地缓存
-        CacheBean cacheBean = hotsCache.get(key);
+        CacheBean cacheBean = localCache.get(key);
         if (cacheBean != null) {
             //判断key的过期时间
             if (cacheBean.expireTime >= (System.currentTimeMillis() / 1000)) {
@@ -110,9 +112,9 @@ public class JcacheClients implements Disposable {
     }
 
     public void getAllCache() {
-        Map<String, HotsCache.DLinkedNode> map = hotsCache.getCache();
+        Map<String, LocalNode> map = localCache.getCache();
         for (String key : map.keySet()) {
-            log.debug(key + "==" + map.get(key).cacheBean.toString());
+            log.debug(key + "==" + map.get(key).value.toString());
         }
     }
 
@@ -121,7 +123,7 @@ public class JcacheClients implements Disposable {
     }
 
     public void expire(String key, int expire) {
-        CacheBean cacheBean = hotsCache.get(key);
+        CacheBean cacheBean = localCache.get(key);
         if (cacheBean != null) {
             cacheBean.expireTime = System.currentTimeMillis() / 1000 + expire;
         }
@@ -134,10 +136,10 @@ public class JcacheClients implements Disposable {
 
     public void removeCache(String key) {
         try {
-            CacheBean cacheBean = hotsCache.get(key);
+            CacheBean cacheBean = localCache.get(key);
             if (cacheBean != null) {
                 //失效本地的key
-                hotsCache.remove(key);
+                localCache.remove(key);
                 //广播失效事件
                 setcdClients.delValue(CommonConstants.getHotsDirKey(baseProperties.getAppname(), key));
             }
@@ -187,10 +189,10 @@ public class JcacheClients implements Disposable {
                 CacheBean cacheBean = JSON.parseObject(keyValueBean.getValue(), CacheBean.class);
                 if (cacheBean != null && cacheBean.expireTime > (System.currentTimeMillis() / 1000)) {
                     String key = keyValueBean.getKey().substring(dir.length() + 1, keyValueBean.getKey().length());
-                    hotsCache.put(key, cacheBean);
+                    localCache.put(key, cacheBean);
                 }
             });
-            log.debug("loadCache success size is:" + hotsCache.getCache().size());
+            log.debug("loadCache success size is:" + localCache.getCache().size());
         } catch (Exception e) {
             log.error("loadCache Exception:{}", e);
         }
